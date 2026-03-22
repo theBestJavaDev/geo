@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JS-Geometry Dash: Stereo Madness ULTRA</title>
+    <style>
+        :root {
+            --bg-color: #0066ff;
+            --accent-color: #00ffff;
+        }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; user-select: none; }
+        canvas { display: block; transition: filter 0.1s; }
+        
+        /* UI OVERLAYS */
+        #game-ui {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #progress-wrapper {
+            width: 100%; height: 12px; background: rgba(0,0,0,0.4);
+            border-bottom: 2px solid rgba(255,255,255,0.1);
+        }
+        #progress-fill {
+            width: 0%; height: 100%; background: #0f0;
+            box-shadow: 0 0 15px #0f0; transition: width 0.1s;
+        }
+        #stats {
+            margin-top: 20px; color: white; font-size: 24px;
+            font-weight: 900; text-shadow: 2px 2px 4px #000;
+        }
+        #practice-indicator {
+            position: absolute; top: 50px; left: 20px;
+            color: #00ffff; font-weight: bold; display: none;
+            text-shadow: 0 0 10px #00ffff;
+        }
+        .controls-hint {
+            position: absolute; bottom: 30px; left: 30px;
+            color: rgba(255,255,255,0.4); font-size: 14px;
+        }
+        #death-flash {
+            position: absolute; inset: 0; background: white;
+            opacity: 0; pointer-events: none; transition: opacity 0.05s;
+        }
+
+        /* NEW: LEVEL COMPLETE SCREEN */
+        #win-screen {
+            position: absolute; inset: 0;
+            background: rgba(0,0,0,0.85);
+            display: none; flex-direction: column;
+            align-items: center; justify-content: center;
+            color: #0f0; font-family: 'Segoe UI', sans-serif;
+            z-index: 100; text-shadow: 0 0 20px #0f0;
+        }
+        #win-screen h1 { font-size: 70px; margin: 0; letter-spacing: 5px; }
+        #win-screen p { font-size: 24px; color: white; }
+        #win-screen button {
+            margin-top: 30px; padding: 15px 40px;
+            background: #0f0; color: black; border: none;
+            font-weight: 900; cursor: pointer; border-radius: 5px;
+            transition: transform 0.2s; pointer-events: auto;
+        }
+        #win-screen button:hover { transform: scale(1.1); }
+    </style>
+</head>
+<body>
+
+    <div id="death-flash"></div>
+    <div id="win-screen">
+        <h1>LEVEL COMPLETE!</h1>
+        <p>Total Attempts: <span id="final-att">1</span></p>
+        <button onclick="location.reload()">PLAY AGAIN</button>
+    </div>
+    
+    <div id="progress-wrapper"><div id="progress-fill"></div></div>
+    
+    <div id="game-ui">
+        <div id="stats">ATTEMPT <span id="att-val">1</span></div>
+        <div id="practice-indicator">PRACTICE MODE ACTIVE</div>
+        <div class="controls-hint">
+            [SPACE/CLICK] Jump / Fly <br>
+            [P] Practice Mode <br>
+            [Z] Place Checkpoint <br>
+            [X] Delete Last Checkpoint
+        </div>
+    </div>
+
+    <canvas id="gdCanvas"></canvas>
+
+    <script>
+        const bgMusic = new Audio('https://soundcloud.com/geometrydashmusic/geometry-dash-stereo-madness?in=red0ja8v8fqn/sets/geometry'); 
+        bgMusic.loop = true; // Makes the song restart automatically
+        bgMusic.volume = 0.5; // Adjust volume from 0 to 1
+        /**
+         * GEOMETRY DASH: STEREO MADNESS (ULTRA EDITION)
+         * - Balanced "Humanly Possible" Layout
+         * - Win Screen Logic Added
+         * - Design Intact
+         */
+
+        const canvas = document.getElementById('gdCanvas');
+        const ctx = canvas.getContext('2d');
+        const progFill = document.getElementById('progress-fill');
+        const attVal = document.getElementById('att-val');
+        const flash = document.getElementById('death-flash');
+        const practiceUI = document.getElementById('practice-indicator');
+        const winScreen = document.getElementById('win-screen');
+        const finalAtt = document.getElementById('final-att');
+
+        const CONFIG = {
+            GRAVITY: 0.92,
+            JUMP_PWR: -15.5,
+            SHIP_THRUST: -0.75,
+            SHIP_GRAV: 0.65,
+            SPEED: 7.2,
+            GRID: 60,
+            GROUND_H: 140,
+            HITBOX_BUFFER: 14
+        };
+
+        let state = {
+            active: true,
+            won: false,
+            attempts: 1,
+            practice: false,
+            cameraX: 0,
+            shake: 0,
+            frame: 0,
+            checkpoints: [],
+            particles: [],
+            isInput: false,
+            levelWidth: 0
+        };
+
+        // --- NEW INCREDIBLY DIFFICULT (BUT POSSIBLE) LAYOUT ---
+        // Legend: s=spike, b=block, t=triple, S=ShipPortal, C=CubePortal, o=YellowOrb, p=pillar
+        const levelRaw = [
+            // INTRO - Warming up
+            { x: 10, y: 0, t: 's' }, { x: 15, y: 0, t: 's' }, { x: 22, y: 0, t: 't' },
+            { x: 29, y: 1, t: 'b' }, { x: 30, y: 1, t: 'b' }, { x: 31, y: 1, t: 'b' }, { x: 32, y: 1, t: 'b' }, {x: 29, y: 0, t:'s'},
+            { x: 30, y: 2, t: 's' },
+            
+            // ORBS & GAPS
+            { x: 40, y: 0, t: 't' },
+            { x: 46, y: 2, t: 'o' }, { x: 50, y: 2, t: 'o' },
+            { x: 53, y: 2, t: 'b' }, { x: 54, y: 2, t: 'b' }, { x: 55, y: 2, t: 'b' }, { x: 56, y: 2, t: 'b' }, {x: 57, y: 2, t: 'b'},
+            { x: 53, y: 1, t: 'b' }, { x: 54, y: 1, t: 'b' }, { x: 55, y: 1, t: 'b' }, { x: 56, y: 1, t: 'b' }, {x: 57, y: 1, t: 'b'},
+            { x: 53, y: 0, t: 'b' }, { x: 54, y: 0, t: 'b' }, { x: 55, y: 0, t: 'b' }, { x: 56, y: 0, t: 'b' }, {x: 57, y: 0, t: 'b'},
+            { x: 54, y: 3, t: 't' },
+
+            // LONG FLAT PLATFORM 1
+            {x: 69, y: 0, t: 'b'}, { x: 70, y: 1, t: 'b' }, { x: 71, y: 1, t: 'b' }, { x: 72, y: 1, t: 'b' }, { x: 73, y: 1, t: 'b' }, { x: 74, y: 1, t: 'b' },
+            { x: 75, y: 1, t: 'b' }, { x: 76, y: 1, t: 'b' }, { x: 77, y: 1, t: 'b' }, { x: 78, y: 1, t: 'b' }, { x: 79, y: 1, t: 'b' },
+            { x: 72, y: 2, t: 's' }, { x: 76, y: 2, t: 't' },
+            
+            // ORB SECTION 1
+            { x: 90, y: 1, t: 'b' }, { x: 93, y: 3, t: 'b' }, { x: 96, y: 5, t: 'b' }, { x: 99, y: 7, t: 'b' },
+            { x: 102, y: 5, t: 'o'},
+            { x: 105, y: 6, t: 'o' }, { x: 109, y: 4, t: 'o' }, { x: 111, y: 6, t: 'o' }, { x: 114.5, y: 5, t: 'o'}, 
+            { x: 106, y: 0, t: 't'}, { x: 109, y: 0, t: 't'}, { x: 112, y: 0, t: 't'}, { x: 115, y: 0, t: 't'},
+            
+            // LONG FLAT PLATFORM 2 WITH ORBS
+            { x: 155, y: 0, t: 't' }, { x: 158, y: 0, t: 't' }, { x: 161, y: 0, t: 't' }, { x: 164, y: 0, t: 't' }, { x: 167, y: 0, t: 't' }, { x: 156, y: 1, t: 'o' }, { x: 159, y: 2, t: 'o' }, { x: 162, y: 2, t: 'o' }, 
+            { x: 165, y: 3, t: 'b' }, { x: 166, y: 3, t: 'b' }, { x: 167, y: 3, t: 'b' }, { x: 168, y: 3, t: 'b' }, { x: 169, y: 3, t: 'b' },
+            { x: 170, y: 3, t: 'b' }, { x: 171, y: 3, t: 'b' }, { x: 172, y: 3, t: 'b' }, { x: 173, y: 3, t: 'b' }, { x: 174, y: 3, t: 'b' },
+            { x: 168, y: 4, t: 's' }, { x: 172, y: 4, t: 't' },
+            
+            // ORB CHAIN MADNESS
+            { x: 183, y: 2, t: 'o' }, { x: 186, y: 4, t: 'o' }, { x: 190, y: 2, t: 'o' }, { x: 193, y: 4, t: 'o' },
+            { x: 186, y: 0, t: 't' }, {x: 190, y: 0, t: 't'}, { x: 194, y: 0, t: 't' }, // Spikes beneath the orbs
+            
+            // STAIRS AND DROPS
+            { x: 205, y: 1, t: 'b' }, { x: 208, y: 3, t: 'b' },
+            { x: 207, y: 0, t: 't' }, { x: 210, y: 0, t: 't' },
+            
+            // LONG FLAT PLATFORM 3
+            { x: 225, y: 1, t: 'b' }, { x: 226, y: 1, t: 'b' }, { x: 227, y: 1, t: 'b' }, { x: 228, y: 1, t: 'b' }, { x: 229, y: 1, t: 'b' },
+            { x: 230, y: 1, t: 'b' }, { x: 231, y: 1, t: 'b' }, { x: 232, y: 1, t: 'b' }, { x: 233, y: 1, t: 'b' }, { x: 234, y: 1, t: 'b' },
+            { x: 225, y: 0, t: 'b' }, { x: 226, y: 0, t: 'b' }, { x: 227, y: 0, t: 'b' }, { x: 228, y: 0, t: 'b' }, { x: 229, y: 0, t: 'b' },
+            { x: 230, y: 0, t: 'b' }, { x: 231, y: 0, t: 'b' }, { x: 232, y: 0, t: 'b' }, { x: 233, y: 0, t: 'b' }, { x: 234, y: 0, t: 'b' },
+            { x: 227, y: 2, t: 't' }, { x: 232, y: 2, t: 's' },
+            
+            // SHIP SECTION 2 - The Gauntlet
+            { x: 245, y: 2, t: 'S' },
+            { x: 255, y: 0, t: 'p', h: 4 }, { x: 255, y: 10, t: 'p', h: 2 },
+            { x: 265, y: 0, t: 'p', h: 2 }, { x: 265, y: 8, t: 'p', h: 4 },
+            { x: 275, y: 0, t: 'p', h: 5 }, { x: 275, y: 11, t: 'p', h: 1 },
+            { x: 295, y: 0, t: 'p', h: 3 }, { x: 295, y: 9, t: 'p', h: 3 },
+            { x: 267, y: 4, t: 's' }, { x: 268.5, y: 7, t: 's' }, { x: 273, y: 6, t: 's' }, { x: 270, y: 2, t: 's' },
+            { x: 276, y: 6, t: 's' }, { x: 279, y: 3, t: 's' }, { x: 280, y: 8, t: 's' }, { x: 282, y: 2, t: 's' }, { x: 283, y: 5, t: 's' }, 
+            { x: 284, y: 9, t: 's' }, { x: 286, y: 2, t: 's' }, { x: 286, y: 6, t: 's' }, { x: 288, y: 4, t: 's' }, { x: 289, y: 6, t: 's' }, 
+  
+            // FINAL CUBE SPRINT
+            { x: 310, y: 2, t: 'C' },
+            { x: 320, y: 0, t: 't' },
+            { x: 326, y: 2, t: 'o' }, { x: 330, y: 2, t: 'o' },
+            { x: 338, y: 0, t: 't' }, { x: 345, y: 0, t: 't' },
+            
+            // LONG FLAT PLATFORM 4 (Final test)
+            { x: 355, y: 0, t: 'b' }, { x: 356, y: 0, t: 'b' }, { x: 357, y: 0, t: 'b' }, { x: 358, y: 0, t: 'b' }, { x: 359, y: 0, t: 'b' },
+            { x: 360, y: 0, t: 'b' }, { x: 361, y: 0, t: 'b' }, { x: 362, y: 0, t: 'b' }, { x: 363, y: 0, t: 'b' }, { x: 364, y: 0, t: 'b' },
+            { x: 357, y: 1, t: 's' }, { x: 361, y: 1, t: 't' },
+            
+            // FINAL ORB HOP TO FINISH
+            { x: 372, y: 2, t: 'o' }, { x: 375, y: 4, t: 'o' }, { x: 379, y: 2, t: 'o' },
+            { x: 374, y: 0, t: 't' }, { x: 377, y: 0, t: 't' }, { x: 381, y: 0, t: 't' },
+            { x: 405, y: 0, t: 'finish' }
+        ];
+
+        state.levelWidth = 410 * CONFIG.GRID;
+
+        class Player {
+            constructor() { this.reset(); }
+            reset(checkpoint = null) {
+                if (checkpoint) {
+                    this.x = checkpoint.x; this.y = checkpoint.y; this.mode = checkpoint.mode;
+                } else {
+                    this.x = 100; this.y = canvas.height - CONFIG.GROUND_H - 60; this.mode = 'cube';
+                }
+                this.w = 48; this.h = 48; this.vy = 0; this.rot = 0;
+                this.grounded = false; this.dead = false;
+            }
+            update() {
+                if (this.dead || state.won) return;
+                if (this.mode === 'cube') {
+                    this.vy += CONFIG.GRAVITY;
+                    if (state.isInput && this.grounded) this.vy = CONFIG.JUMP_PWR;
+                    if (!this.grounded) this.rot += 6;
+                    else this.rot = Math.round(this.rot / 90) * 90;
+                } else {
+                    if (state.isInput) this.vy += CONFIG.SHIP_THRUST;
+                    else this.vy += CONFIG.SHIP_GRAV;
+                    if (this.vy > 9) this.vy = 9;
+                    if (this.vy < -9) this.vy = -9;
+                    this.rot = this.vy * 3.5;
+                }
+                this.x += CONFIG.SPEED; this.y += this.vy;
+                const floor = canvas.height - CONFIG.GROUND_H - this.h;
+                if (this.y > floor) { this.y = floor; this.vy = 0; this.grounded = true; }
+                else if (this.y < 0) {
+                    this.y = 0; this.vy = 0; if (this.mode === 'cube') this.die();
+                } else { this.grounded = false; }
+                if (state.frame % 2 === 0) state.particles.push(new Particle(this.x, this.y + this.h/2, this.mode === 'cube' ? '#fff' : '#0ff'));
+            }
+            draw() {
+                ctx.save();
+                ctx.translate(this.x - state.cameraX + this.w/2, this.y + this.h/2);
+                ctx.rotate(this.rot * Math.PI / 180);
+                if (this.mode === 'cube') {
+                    ctx.fillStyle = '#00ffcc'; ctx.fillRect(-this.w/2, -this.h/2, this.w, this.h);
+                    ctx.strokeStyle = 'black'; ctx.lineWidth = 4;
+                    ctx.strokeRect(-this.w/2, -this.h/2, this.w, this.h);
+                    ctx.strokeRect(-this.w/4, -this.h/4, this.w/2, this.h/2);
+                } else {
+                    ctx.fillStyle = '#ff3366'; ctx.beginPath();
+                    ctx.moveTo(-25, -15); ctx.lineTo(25, 0); ctx.lineTo(-25, 15);
+                    ctx.closePath(); ctx.fill(); ctx.strokeStyle = 'white'; ctx.stroke();
+                    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(0, -5, 10, 10);
+                }
+                ctx.restore();
+            }
+            die() {
+                if (this.dead || state.won) return;
+                this.dead = true; state.active = false; state.shake = 15;
+                flash.style.opacity = '1'; setTimeout(() => flash.style.opacity = '0', 50);
+                if (!state.practice) {
+                    bgMusic.currentTime = 0; // Rewind to start
+                }
+                for (let i = 0; i < 30; i++) state.particles.push(new Particle(this.x, this.y, '#ff4400', true));
+                setTimeout(() => {
+                    if (state.practice && state.checkpoints.length > 0) {
+                        const last = state.checkpoints[state.checkpoints.length - 1];
+                        this.reset(last); state.cameraX = last.x - 200;
+                    } else {
+                        this.reset(); state.attempts++; attVal.innerText = state.attempts; state.cameraX = 0;
+                    }
+                    state.active = true; this.dead = false;
+                }, 600);
+            }
+        }
+
+        class Particle {
+            constructor(x, y, color, explode = false) {
+                this.x = x; this.y = y; this.color = color;
+                this.vx = explode ? (Math.random() - 0.5) * 15 : -2;
+                this.vy = explode ? (Math.random() - 0.5) * 15 : (Math.random() - 0.5) * 2;
+                this.life = 1.0; this.size = explode ? Math.random() * 8 + 4 : Math.random() * 4;
+            }
+            update() { this.x += this.vx; this.y += this.vy; this.life -= 0.02; }
+            draw() {
+                ctx.globalAlpha = this.life; ctx.fillStyle = this.color;
+                ctx.fillRect(this.x - state.cameraX, this.y, this.size, this.size); ctx.globalAlpha = 1;
+            }
+        }
+
+        const player = new Player();
+
+        function drawSpike(x, y, rot = 0) {
+            ctx.save(); ctx.translate(x - state.cameraX + CONFIG.GRID/2, y + CONFIG.GRID/2);
+            ctx.rotate(rot * Math.PI / 180); ctx.fillStyle = '#ddd'; ctx.strokeStyle = '#222';
+            ctx.beginPath(); ctx.moveTo(-CONFIG.GRID/2, CONFIG.GRID/2);
+            ctx.lineTo(0, -CONFIG.GRID/2); ctx.lineTo(CONFIG.GRID/2, CONFIG.GRID/2);
+            ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+        }
+
+        function checkCollision(obj) {
+            if (state.won) return;
+            const b = CONFIG.HITBOX_BUFFER;
+            const px = player.x + b, py = player.y + b, pw = player.w - b*2, ph = player.h - b*2;
+            if (px < obj.x + obj.w && px + pw > obj.x && py < obj.y + obj.h && py + ph > obj.y) {
+                if (obj.t === 'finish') {
+                    state.won = true;
+                    finalAtt.innerText = state.attempts;
+                    winScreen.style.display = 'flex';
+                    return;
+                }
+                if (obj.t === 's' || obj.t === 't' || obj.t === 'p') player.die();
+                if (obj.t === 'b') {
+                    if (player.vy > 0 && py + ph - player.vy <= obj.y + 15) {
+                        player.y = obj.y - player.h; player.vy = 0; player.grounded = true;
+                    } else player.die();
+                }
+                if (obj.t === 'S') player.mode = 'ship';
+                if (obj.t === 'C') player.mode = 'cube';
+                if (obj.t === 'o' && state.isInput) {
+                    player.vy = CONFIG.JUMP_PWR * 0.9; player.grounded = false;
+                }
+            }
+        }
+
+        window.onkeydown = (e) => {
+            if (bgMusic.paused) {
+                bgMusic.play().catch(e => console.log("Audio play blocked until interaction."));
+            }       
+            if (e.code === 'Space') state.isInput = true;
+            if (e.code === 'KeyP') {
+                state.practice = !state.practice; practiceUI.style.display = state.practice ? 'block' : 'none'; state.checkpoints = [];
+            }
+            if (e.code === 'KeyZ' && state.practice) state.checkpoints.push({ x: player.x, y: player.y, mode: player.mode });
+            if (e.code === 'KeyX' && state.practice) state.checkpoints.pop();
+        };
+        window.onkeyup = (e) => { if (e.code === 'Space') state.isInput = false; };
+        window.onmousedown = () => state.isInput = true;
+        window.onmouseup = () => state.isInput = false;
+
+        function loop() {
+            let sx = 0, sy = 0;
+            if (state.shake > 0) {
+                sx = (Math.random() - 0.5) * state.shake; sy = (Math.random() - 0.5) * state.shake; state.shake *= 0.9;
+            }
+            const pulse = Math.sin(state.frame / 10) * 10;
+            ctx.fillStyle = `rgb(0, ${100 + pulse}, ${200 + pulse})`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            if (state.active && !state.won) {
+                player.update();
+                state.cameraX = player.x - 250;
+                progFill.style.width = Math.min(100, (player.x / state.levelWidth * 100)) + "%";
+            }
+
+            ctx.save(); ctx.translate(sx, sy);
+            ctx.fillStyle = '#000c1a'; ctx.fillRect(0, canvas.height - CONFIG.GROUND_H, canvas.width, CONFIG.GROUND_H);
+            ctx.strokeStyle = '#0ff'; ctx.lineWidth = 4; ctx.strokeRect(-5, canvas.height - CONFIG.GROUND_H, canvas.width + 10, 5);
+
+            levelRaw.forEach(item => {
+                const wx = item.x * CONFIG.GRID;
+                const wy = canvas.height - CONFIG.GROUND_H - (item.y + 1) * CONFIG.GRID;
+                if (item.t === 'b') {
+                    ctx.fillStyle = '#222'; ctx.strokeStyle = '#555'; ctx.fillRect(wx - state.cameraX, wy, CONFIG.GRID, CONFIG.GRID);
+                    ctx.strokeRect(wx - state.cameraX, wy, CONFIG.GRID, CONFIG.GRID);
+                    checkCollision({ x: wx, y: wy, w: CONFIG.GRID, h: CONFIG.GRID, t: 'b' });
+                } 
+                else if (item.t === 'p') {
+                    ctx.fillStyle = '#111'; const ph = item.h * CONFIG.GRID; const py = item.y === 0 ? canvas.height - CONFIG.GROUND_H - ph : 0;
+                    ctx.fillRect(wx - state.cameraX, py, CONFIG.GRID, ph);
+                    checkCollision({ x: wx, y: py, w: CONFIG.GRID, h: ph, t: 'p' });
+                }
+                else if (item.t === 's') {
+                    drawSpike(wx, wy, item.rot || 0);
+                    checkCollision({ x: wx + 15, y: wy + 15, w: CONFIG.GRID - 30, h: CONFIG.GRID - 20, t: 's' });
+                }
+                else if (item.t === 't') {
+                    for (let i = 0; i < 3; i++) {
+                        const tx = wx + (i * CONFIG.GRID * 0.7); drawSpike(tx, wy);
+                        checkCollision({ x: tx + 15, y: wy + 15, w: CONFIG.GRID - 30, h: CONFIG.GRID - 20, t: 's' });
+                    }
+                }
+                else if (item.t === 'o') {
+                    ctx.fillStyle = 'yellow'; ctx.beginPath(); ctx.arc(wx - state.cameraX + 30, wy + 30, 20, 0, Math.PI * 2); ctx.fill();
+                    checkCollision({ x: wx, y: wy, w: 60, h: 60, t: 'o' });
+                }
+                else if (item.t === 'S' || item.t === 'C') {
+                    ctx.fillStyle = item.t === 'S' ? '#0f0' : '#f0f'; ctx.globalAlpha = 0.3; ctx.fillRect(wx - state.cameraX, 0, 50, canvas.height); ctx.globalAlpha = 1;
+                    checkCollision({ x: wx, y: 0, w: 50, h: canvas.height, t: item.t });
+                }
+                else if (item.t === 'finish') {
+                    ctx.fillStyle = 'white';
+                    for(let i=0; i<6; i++) ctx.fillRect(wx - state.cameraX + (i%2*30), wy + (i*10) - 400, 30, 10);
+                    checkCollision({ x: wx, y: 0, w: 60, h: canvas.height, t: 'finish' });
+                }
+            });
+
+            state.particles.forEach((p, i) => {
+                p.update(); p.draw(); if (p.life <= 0) state.particles.splice(i, 1);
+            });
+            player.draw(); ctx.restore();
+            state.frame++;
+            requestAnimationFrame(loop);
+        }
+
+        function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+        window.onresize = resize;
+        resize();
+        loop();
+    </script>
+</body>
+</html>
