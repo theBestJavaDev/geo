@@ -371,7 +371,7 @@
             }
             const pulse = Math.sin(state.frame / 10) * 10;
             ctx.fillStyle = `rgb(0, ${100 + pulse}, ${200 + pulse})`;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillRect(0, 0, state.scaledViewWidth || canvas.width, 1000);
 
             if (state.active && !state.won) {
                 player.update();
@@ -429,8 +429,24 @@
             requestAnimationFrame(loop);
         }
 
-        function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
-        window.onresize = resize;
+        function resize() {
+            // 1. Set the actual internal resolution to match the window
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            // 2. Define our "Ideal" height (e.g., 720p). 
+            // This ensures the ceiling and floor stay relative to each other.
+            const targetHeight = 720; 
+            const scale = canvas.height / targetHeight;
+
+            // 3. Apply the scale to the context so everything draws smaller/larger
+            ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    
+            // 4. Update the state so the game knows the "scaled" width
+            state.scaledViewWidth = canvas.width / scale;
+        }
+
+        window.addEventListener('resize', resize);
         resize();
         loop();
     </script>
