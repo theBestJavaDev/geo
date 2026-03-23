@@ -9,8 +9,20 @@
             --bg-color: #0066ff;
             --accent-color: #00ffff;
         }
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; user-select: none; }
-        canvas { display: block; transition: filter 0.1s; }
+        canvas { 
+            display: block; 
+            transition: filter 0.1s; 
+            touch-action: none; /* Prevents scrolling/zooming while playing */
+        }
+
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background: #000; 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            user-select: none; 
+            -webkit-tap-highlight-color: transparent; /* Removes the blue box when tapping */
+        }
         
         /* UI OVERLAYS */
         #game-ui {
@@ -333,20 +345,25 @@
         }
 
         window.onkeydown = (e) => {
-            if (bgMusic.paused) {
-                bgMusic.play().catch(e => console.log("Audio play blocked until interaction."));
-            }       
+            if (bgMusic.paused) bgMusic.play();
             if (e.code === 'Space') state.isInput = true;
             if (e.code === 'KeyP') {
-                state.practice = !state.practice; practiceUI.style.display = state.practice ? 'block' : 'none'; state.checkpoints = [];
-            }
+                state.practice = !state.practice; 
+                practiceUI.style.display = state.practice ? 'block' : 'none'; 
+                state.checkpoints = [];
+            }    
             if (e.code === 'KeyZ' && state.practice) state.checkpoints.push({ x: player.x, y: player.y, mode: player.mode });
             if (e.code === 'KeyX' && state.practice) state.checkpoints.pop();
         };
         window.onkeyup = (e) => { if (e.code === 'Space') state.isInput = false; };
-        window.onmousedown = () => state.isInput = true;
-        window.onmouseup = () => state.isInput = false;
 
+        // This covers Taps (Mobile) and Clicks (Desktop)
+        window.addEventListener('pointerdown', () => {
+            if (bgMusic.paused) bgMusic.play();
+            state.isInput = true;
+        });
+        window.addEventListener('pointerup', () => state.isInput = false);
+        
         function loop() {
             let sx = 0, sy = 0;
             if (state.shake > 0) {
