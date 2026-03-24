@@ -370,8 +370,8 @@
                 sx = (Math.random() - 0.5) * state.shake; sy = (Math.random() - 0.5) * state.shake; state.shake *= 0.9;
             }
             const pulse = Math.sin(state.frame / 10) * 10;
-            ctx.fillStyle = `rgb(0, ${100 + pulse}, ${200 + pulse})`;
-            ctx.fillRect(0, 0, state.scaledViewWidth || canvas.width, 1000);
+            ctx.fillStyle = `rgb(0, 100, 200)`;
+            ctx.fillRect(0, -2000, (state.scaledViewWidth || canvas.width) + 500, 5000);
 
             if (state.active && !state.won) {
                 player.update();
@@ -436,11 +436,11 @@
 
             // 2. Define our "Ideal" height (e.g., 720p). 
             // This ensures the ceiling and floor stay relative to each other.
-            const targetHeight = 720; 
+            const targetHeight = 1080; 
             const scale = canvas.height / targetHeight;
 
-            // 3. Apply the scale to the context so everything draws smaller/larger
-            ctx.setTransform(scale, 0, 0, scale, 0, 0);
+            ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset scale first
+            ctx.scale(scale, scale);
     
             // 4. Update the state so the game knows the "scaled" width
             state.scaledViewWidth = canvas.width / scale;
