@@ -130,7 +130,7 @@
             SHIP_GRAV: 0.65,
             SPEED: 7.2,
             GRID: 60,
-            GROUND_H: 140,
+            GROUND_H: 250,
             HITBOX_BUFFER: 14
         };
 
@@ -436,7 +436,7 @@
 
             // 2. Define our "Ideal" height (e.g., 720p). 
             // This ensures the ceiling and floor stay relative to each other.
-            const targetHeight = 1080; 
+            const targetHeight = 1400; 
             const scale = canvas.height / targetHeight;
 
             ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset scale first
