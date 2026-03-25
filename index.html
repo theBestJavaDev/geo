@@ -231,11 +231,16 @@
                 if (checkpoint) {
                     this.x = checkpoint.x; this.y = checkpoint.y; this.mode = checkpoint.mode;
                 } else {
-                    this.x = 100; this.y = state.gameHeight - CONFIG.GROUND_H - 60; this.mode = 'cube';
+                    this.x = 100; 
+            // FIX: Use state.gameHeight, with a fallback of 900 if it hasn't loaded yet
+                    const h = state.gameHeight || 900;
+                    this.y = h - CONFIG.GROUND_H - 48; // 48 is the player's height
+                    this.mode = 'cube';
                 }
                 this.w = 48; this.h = 48; this.vy = 0; this.rot = 0;
                 this.grounded = false; this.dead = false;
             }
+            
             update() {
                 if (this.dead || state.won) return;
                 if (this.mode === 'cube') {
@@ -251,13 +256,22 @@
                     this.rot = this.vy * 3.5;
                 }
                 this.x += CONFIG.SPEED; this.y += this.vy;
-                const floor = state.gameHeight - CONFIG.GROUND_H - this.h;
-                if (this.y > floor) { this.y = floor; this.vy = 0; this.grounded = true; }
+        
+                // FIX: Use state.gameHeight instead of canvas.height
+                const floor = (state.gameHeight || 900) - CONFIG.GROUND_H - this.h;
+        
+                if (this.y > floor) { 
+                    this.y = floor; this.vy = 0; this.grounded = true; 
+                }
                 else if (this.y < 0) {
-                    this.y = 0; this.vy = 0; if (this.mode === 'cube') this.die();
-                } else { this.grounded = false; }
+                    this.y = 0; this.vy = 0; // Slide against the ceiling instead of dying
+                } else { 
+                    this.grounded = false; 
+                }
+        
                 if (state.frame % 2 === 0) state.particles.push(new Particle(this.x, this.y + this.h/2, this.mode === 'cube' ? '#fff' : '#0ff'));
             }
+            
             draw() {
                 ctx.save();
                 ctx.translate(this.x - state.cameraX + this.w/2, this.y + this.h/2);
@@ -460,10 +474,14 @@
             ctx.setTransform(1, 0, 0, 1, 0, 0); 
             ctx.scale(scale, scale);
 
-            // Calculate how much horizontal space we can actually see now
             state.scaledViewWidth = canvas.width / scale;
-        }
 
+            // FIX: Snap the player to the newly calculated floor so they don't get stuck in the sky!
+            if (typeof player !== 'undefined' && !player.dead) {
+                player.y = state.gameHeight - CONFIG.GROUND_H - player.h;
+                player.vy = 0;
+            }
+        }
         window.addEventListener('resize', resize);
         resize();
         loop();
