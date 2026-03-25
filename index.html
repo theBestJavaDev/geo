@@ -231,7 +231,7 @@
                 if (checkpoint) {
                     this.x = checkpoint.x; this.y = checkpoint.y; this.mode = checkpoint.mode;
                 } else {
-                    this.x = 100; this.y = canvas.height - CONFIG.GROUND_H - 60; this.mode = 'cube';
+                    this.x = 100; this.y = state.gameHeight - CONFIG.GROUND_H - 60; this.mode = 'cube';
                 }
                 this.w = 48; this.h = 48; this.vy = 0; this.rot = 0;
                 this.grounded = false; this.dead = false;
@@ -251,7 +251,7 @@
                     this.rot = this.vy * 3.5;
                 }
                 this.x += CONFIG.SPEED; this.y += this.vy;
-                const floor = canvas.height - CONFIG.GROUND_H - this.h;
+                const floor = state.gameHeight - CONFIG.GROUND_H - this.h;
                 if (this.y > floor) { this.y = floor; this.vy = 0; this.grounded = true; }
                 else if (this.y < 0) {
                     this.y = 0; this.vy = 0; if (this.mode === 'cube') this.die();
@@ -369,9 +369,20 @@
             if (state.shake > 0) {
                 sx = (Math.random() - 0.5) * state.shake; sy = (Math.random() - 0.5) * state.shake; state.shake *= 0.9;
             }
-            const pulse = Math.sin(state.frame / 10) * 10;
-            ctx.fillStyle = `rgb(0, 100, 200)`;
-            ctx.fillRect(0, -2000, (state.scaledViewWidth || canvas.width) + 500, 5000);
+
+            // --- 1. DYNAMIC VIBRANT BACKGROUND ---
+            // Colors cycle through the rainbow based on frames, kept dark (15% lightness) for contrast
+            const hue = (state.frame * 0.3) % 360; 
+            ctx.fillStyle = `hsl(${hue}, 80%, 15%)`;
+            ctx.fillRect(-10, -2000, state.scaledViewWidth + 20, 5000); // Fills whole scaled screen
+
+            // --- 2. PARALLAX LAYER ---
+            ctx.fillStyle = `hsl(${(hue + 30) % 360}, 60%, 8%)`; // Slightly darker/offset color for depth
+            const parallaxOffset = -(state.cameraX * 0.4) % 300; // Moves at 40% speed
+            for (let i = -1; i < state.scaledViewWidth / 300 + 2; i++) {
+                // Draw abstract background pillars
+                ctx.fillRect(parallaxOffset + (i * 300), state.gameHeight - CONFIG.GROUND_H - 500, 150, 600);
+            }
 
             if (state.active && !state.won) {
                 player.update();
@@ -380,19 +391,24 @@
             }
 
             ctx.save(); ctx.translate(sx, sy);
-            ctx.fillStyle = '#000c1a'; ctx.fillRect(0, canvas.height - CONFIG.GROUND_H, canvas.width, CONFIG.GROUND_H);
-            ctx.strokeStyle = '#0ff'; ctx.lineWidth = 4; ctx.strokeRect(-5, canvas.height - CONFIG.GROUND_H, canvas.width + 10, 5);
+    
+            // --- 3. STRETCH THE GROUND PROPERLY ---
+            ctx.fillStyle = '#000c1a'; 
+            // Use scaledViewWidth and gameHeight instead of canvas sizes
+            ctx.fillRect(-10, state.gameHeight - CONFIG.GROUND_H, state.scaledViewWidth + 20, CONFIG.GROUND_H);
+            ctx.strokeStyle = '#0ff'; ctx.lineWidth = 4; 
+            ctx.strokeRect(-15, state.gameHeight - CONFIG.GROUND_H, state.scaledViewWidth + 30, 5);
 
             levelRaw.forEach(item => {
                 const wx = item.x * CONFIG.GRID;
-                const wy = canvas.height - CONFIG.GROUND_H - (item.y + 1) * CONFIG.GRID;
+                const wy = state.gameHeight - CONFIG.GROUND_H - (item.y + 1) * CONFIG.GRID;
                 if (item.t === 'b') {
                     ctx.fillStyle = '#222'; ctx.strokeStyle = '#555'; ctx.fillRect(wx - state.cameraX, wy, CONFIG.GRID, CONFIG.GRID);
                     ctx.strokeRect(wx - state.cameraX, wy, CONFIG.GRID, CONFIG.GRID);
                     checkCollision({ x: wx, y: wy, w: CONFIG.GRID, h: CONFIG.GRID, t: 'b' });
                 } 
                 else if (item.t === 'p') {
-                    ctx.fillStyle = '#111'; const ph = item.h * CONFIG.GRID; const py = item.y === 0 ? canvas.height - CONFIG.GROUND_H - ph : 0;
+                    ctx.fillStyle = '#111'; const ph = item.h * CONFIG.GRID; const py = item.y === 0 ? state.gameHeight - CONFIG.GROUND_H - ph : 0;
                     ctx.fillRect(wx - state.cameraX, py, CONFIG.GRID, ph);
                     checkCollision({ x: wx, y: py, w: CONFIG.GRID, h: ph, t: 'p' });
                 }
@@ -411,13 +427,14 @@
                     checkCollision({ x: wx, y: wy, w: 60, h: 60, t: 'o' });
                 }
                 else if (item.t === 'S' || item.t === 'C') {
-                    ctx.fillStyle = item.t === 'S' ? '#0f0' : '#f0f'; ctx.globalAlpha = 0.3; ctx.fillRect(wx - state.cameraX, 0, 50, canvas.height); ctx.globalAlpha = 1;
-                    checkCollision({ x: wx, y: 0, w: 50, h: canvas.height, t: item.t });
+                    ctx.fillStyle = item.t === 'S' ? '#0f0' : '#f0f'; ctx.globalAlpha = 0.3; 
+                    ctx.fillRect(wx - state.cameraX, 0, 50, state.gameHeight); ctx.globalAlpha = 1;
+                    checkCollision({ x: wx, y: 0, w: 50, h: state.gameHeight, t: item.t });
                 }
                 else if (item.t === 'finish') {
                     ctx.fillStyle = 'white';
                     for(let i=0; i<6; i++) ctx.fillRect(wx - state.cameraX + (i%2*30), wy + (i*10) - 400, 30, 10);
-                    checkCollision({ x: wx, y: 0, w: 60, h: canvas.height, t: 'finish' });
+                    checkCollision({ x: wx, y: 0, w: 60, h: state.gameHeight, t: 'finish' });
                 }
             });
 
@@ -430,19 +447,20 @@
         }
 
         function resize() {
-            // 1. Set the actual internal resolution to match the window
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
 
-            // 2. Define our "Ideal" height (e.g., 720p). 
-            // This ensures the ceiling and floor stay relative to each other.
-            const targetHeight = 1400; 
-            const scale = canvas.height / targetHeight;
-
-            ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset scale first
-            ctx.scale(scale, scale);
+            // Detect if we are on a laptop or mobile
+            const isMobile = window.innerWidth < 800 || window.innerHeight > window.innerWidth;
     
-            // 4. Update the state so the game knows the "scaled" width
+            // Zoom out heavily on mobile (1400), but keep it normal on laptop (900)
+            state.gameHeight = isMobile ? 1400 : 900; 
+            const scale = canvas.height / state.gameHeight;
+
+            ctx.setTransform(1, 0, 0, 1, 0, 0); 
+            ctx.scale(scale, scale);
+
+            // Calculate how much horizontal space we can actually see now
             state.scaledViewWidth = canvas.width / scale;
         }
 
