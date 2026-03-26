@@ -145,6 +145,7 @@
             checkpoints: [],
             particles: [],
             isInput: false,
+            pulse: 0,
             levelWidth: 0
         };
 
@@ -245,9 +246,16 @@
                 if (this.dead || state.won) return;
                 if (this.mode === 'cube') {
                     this.vy += CONFIG.GRAVITY;
-                    if (state.isInput && this.grounded) this.vy = CONFIG.JUMP_PWR;
-                    if (!this.grounded) this.rot += 6;
-                    else this.rot = Math.round(this.rot / 90) * 90;
+                    if (state.isInput && this.grounded) {
+                        this.vy = CONFIG.JUMP_PWR;
+                        this.grounded = false; // Immediately set grounded to false when jumping
+                    }
+                    if (!this.grounded) {
+                    this.rot += 6;
+                    } else {
+                    // Use a smoother interpolation or a hard lock
+                    this.rot = Math.round(this.rot / 90) * 90;
+                    }
                 } else {
                     if (state.isInput) this.vy += CONFIG.SHIP_THRUST;
                     else this.vy += CONFIG.SHIP_GRAV;
@@ -346,8 +354,13 @@
                 }
                 if (obj.t === 's' || obj.t === 't' || obj.t === 'p') player.die();
                 if (obj.t === 'b') {
-                    if (player.vy > 0 && py + ph - player.vy <= obj.y + 15) {
-                        player.y = obj.y - player.h; player.vy = 0; player.grounded = true;
+                    if (player.vy > 0 && player.y + player.h < wy + 20) {
+                        player.y = wy - player.h;
+                        player.vy = 0;
+                        player.grounded = true;
+                        // Force rotation to a clean 90-degree angle immediately on impact
+                        player.rot = Math.round(player.rot / 90) * 90; 
+                    }
                     } else player.die();
                 }
                 if (obj.t === 'S') player.mode = 'ship';
@@ -386,8 +399,9 @@
 
             // --- 1. DYNAMIC DARK RED GRADIENT ---
             // Use Math.sin to make the brightness slowly "breathe" up and down
-            const pulse = Math.sin(state.frame * 0.02) * 5; 
-    
+            const pulse = Math.sin(state.frame * 0.1) * 5; 
+            const beatInterval = 0.48;
+            const currentTime = bgMusic.currentTime;
             // Create a vertical gradient from the top of the sky to the floor
             const bgGradient = ctx.createLinearGradient(0, 0, 0, state.gameHeight);
     
@@ -402,6 +416,15 @@
             // (The Parallax Pillars have been completely removed)
 
             // --- 2. GAME LOGIC ---
+            if (currentTime % beatInterval < 0.05) {
+                state.pulse = 12; // The "Flash" intensity
+            }
+            
+            state.pulse *= 9.2;
+
+            const baseBrightness = 5; 
+            const finalBrightness = baseBrightness + state.pulse;
+            
             if (state.active && !state.won) {
                 player.update();
                 state.cameraX = player.x - 250;
