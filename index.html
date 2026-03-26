@@ -384,20 +384,24 @@
                 sx = (Math.random() - 0.5) * state.shake; sy = (Math.random() - 0.5) * state.shake; state.shake *= 0.9;
             }
 
-            // --- 1. DYNAMIC VIBRANT BACKGROUND ---
-            // Colors cycle through the rainbow based on frames, kept dark (15% lightness) for contrast
-            const hue = (state.frame * 0.3) % 360; 
-            ctx.fillStyle = `hsl(${hue}, 80%, 15%)`;
-            ctx.fillRect(-10, -2000, state.scaledViewWidth + 20, 5000); // Fills whole scaled screen
+            // --- 1. DYNAMIC DARK RED GRADIENT ---
+            // Use Math.sin to make the brightness slowly "breathe" up and down
+            const pulse = Math.sin(state.frame * 0.02) * 5; 
+    
+            // Create a vertical gradient from the top of the sky to the floor
+            const bgGradient = ctx.createLinearGradient(0, 0, 0, state.gameHeight);
+    
+            // Top of screen: Pitch black / extremely dark red
+            bgGradient.addColorStop(0, `hsl(0, 100%, ${3 + pulse}%)`);
+            // Bottom of screen: Deeper, slightly brighter crimson
+            bgGradient.addColorStop(1, `hsl(0, 100%, ${15 + pulse}%)`);
 
-            // --- 2. PARALLAX LAYER ---
-            ctx.fillStyle = `hsl(${(hue + 30) % 360}, 60%, 8%)`; // Slightly darker/offset color for depth
-            const parallaxOffset = -(state.cameraX * 0.4) % 300; // Moves at 40% speed
-            for (let i = -1; i < state.scaledViewWidth / 300 + 2; i++) {
-                // Draw abstract background pillars
-                ctx.fillRect(parallaxOffset + (i * 300), state.gameHeight - CONFIG.GROUND_H - 500, 150, 600);
-            }
+            ctx.fillStyle = bgGradient;
+            ctx.fillRect(-10, -2000, state.scaledViewWidth + 20, 5000); 
 
+            // (The Parallax Pillars have been completely removed)
+
+            // --- 2. GAME LOGIC ---
             if (state.active && !state.won) {
                 player.update();
                 state.cameraX = player.x - 250;
@@ -410,7 +414,7 @@
             ctx.fillStyle = '#000c1a'; 
             // Use scaledViewWidth and gameHeight instead of canvas sizes
             ctx.fillRect(-10, state.gameHeight - CONFIG.GROUND_H, state.scaledViewWidth + 20, CONFIG.GROUND_H);
-            ctx.strokeStyle = '#0ff'; ctx.lineWidth = 4; 
+            ctx.strokeStyle = '#ff0000'; ctx.lineWidth = 4; 
             ctx.strokeRect(-15, state.gameHeight - CONFIG.GROUND_H, state.scaledViewWidth + 30, 5);
 
             levelRaw.forEach(item => {
@@ -468,7 +472,7 @@
             const isMobile = window.innerWidth < 800 || window.innerHeight > window.innerWidth;
     
             // Zoom out heavily on mobile (1400), but keep it normal on laptop (900)
-            state.gameHeight = isMobile ? 1400 : 900; 
+            state.gameHeight = isMobile ? 1100 : 900; 
             const scale = canvas.height / state.gameHeight;
 
             ctx.setTransform(1, 0, 0, 1, 0, 0); 
