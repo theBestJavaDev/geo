@@ -145,7 +145,6 @@
             checkpoints: [],
             particles: [],
             isInput: false,
-            pulse: 0,
             levelWidth: 0
         };
 
@@ -246,16 +245,9 @@
                 if (this.dead || state.won) return;
                 if (this.mode === 'cube') {
                     this.vy += CONFIG.GRAVITY;
-                    if (state.isInput && this.grounded) {
-                        this.vy = CONFIG.JUMP_PWR;
-                        this.grounded = false; // Immediately set grounded to false when jumping
-                    }
-                    if (!this.grounded) {
-                    this.rot += 6;
-                    } else {
-                    // Use a smoother interpolation or a hard lock
-                    this.rot = Math.round(this.rot / 90) * 90;
-                    }
+                    if (state.isInput && this.grounded) this.vy = CONFIG.JUMP_PWR;
+                    if (!this.grounded) this.rot += 6;
+                    else this.rot = Math.round(this.rot / 90) * 90;
                 } else {
                     if (state.isInput) this.vy += CONFIG.SHIP_THRUST;
                     else this.vy += CONFIG.SHIP_GRAV;
@@ -341,7 +333,7 @@
             ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
         }
 
-        function checkCollision(obj, targetY) {
+        function checkCollision(obj) {
             if (state.won) return;
             const b = CONFIG.HITBOX_BUFFER;
             const px = player.x + b, py = player.y + b, pw = player.w - b*2, ph = player.h - b*2;
@@ -354,16 +346,9 @@
                 }
                 if (obj.t === 's' || obj.t === 't' || obj.t === 'p') player.die();
                 if (obj.t === 'b') {
-                    // FIX: Use targetY (passed from the loop) instead of the undefined wy
-                    if (player.vy > 0 && player.y + player.h < targetY + 20) {
-                        player.y = targetY - player.h;
-                        player.vy = 0;
-                        player.grounded = true;
-                        // Force rotation to a clean 90-degree angle immediately on impact
-                        player.rot = Math.round(player.rot / 90) * 90; 
-                    } else {
-                        player.die();
-                    }
+                    if (player.vy > 0 && py + ph - player.vy <= obj.y + 15) {
+                        player.y = obj.y - player.h; player.vy = 0; player.grounded = true;
+                    } else player.die();
                 }
                 if (obj.t === 'S') player.mode = 'ship';
                 if (obj.t === 'C') player.mode = 'cube';
@@ -401,31 +386,22 @@
 
             // --- 1. DYNAMIC DARK RED GRADIENT ---
             // Use Math.sin to make the brightness slowly "breathe" up and down
-            const pulseEffect = Math.sin(state.frame * 0.1) * 5; 
-            const beatInterval = 0.48;
-            const currentTime = bgMusic.currentTime;
-
-            // --- 2. GAME LOGIC ---
-            if (currentTime % beatInterval < 0.05) {
-                state.pulse = 12; // The "Flash" intensity
-            }
-            
-            state.pulse *= 0.92;
-
-            const baseBrightness = 5; 
-            const finalBrightness = baseBrightness + state.pulse + pulseEffect;
-            
+            const pulse = Math.sin(state.frame * 0.02) * 5; 
+    
             // Create a vertical gradient from the top of the sky to the floor
             const bgGradient = ctx.createLinearGradient(0, 0, 0, state.gameHeight);
     
             // Top of screen: Pitch black / extremely dark red
-            bgGradient.addColorStop(0, `hsl(0, 100%, ${Math.max(0, finalBrightness - 2)}%)`);
+            bgGradient.addColorStop(0, `hsl(0, 100%, ${3 + pulse}%)`);
             // Bottom of screen: Deeper, slightly brighter crimson
-            bgGradient.addColorStop(1, `hsl(0, 100%, ${Math.max(0, finalBrightness + 10)}%)`);
+            bgGradient.addColorStop(1, `hsl(0, 100%, ${15 + pulse}%)`);
 
             ctx.fillStyle = bgGradient;
             ctx.fillRect(-10, -2000, state.scaledViewWidth + 20, 5000); 
 
+            // (The Parallax Pillars have been completely removed)
+
+            // --- 2. GAME LOGIC ---
             if (state.active && !state.won) {
                 player.update();
                 state.cameraX = player.x - 250;
@@ -447,37 +423,36 @@
                 if (item.t === 'b') {
                     ctx.fillStyle = '#222'; ctx.strokeStyle = '#555'; ctx.fillRect(wx - state.cameraX, wy, CONFIG.GRID, CONFIG.GRID);
                     ctx.strokeRect(wx - state.cameraX, wy, CONFIG.GRID, CONFIG.GRID);
-                    // Pass wy as the second argument
-                    checkCollision({ x: wx, y: wy, w: CONFIG.GRID, h: CONFIG.GRID, t: 'b' }, wy);
+                    checkCollision({ x: wx, y: wy, w: CONFIG.GRID, h: CONFIG.GRID, t: 'b' });
                 } 
                 else if (item.t === 'p') {
                     ctx.fillStyle = '#111'; const ph = item.h * CONFIG.GRID; const py = item.y === 0 ? state.gameHeight - CONFIG.GROUND_H - ph : 0;
                     ctx.fillRect(wx - state.cameraX, py, CONFIG.GRID, ph);
-                    checkCollision({ x: wx, y: py, w: CONFIG.GRID, h: ph, t: 'p' }, py);
+                    checkCollision({ x: wx, y: py, w: CONFIG.GRID, h: ph, t: 'p' });
                 }
                 else if (item.t === 's') {
                     drawSpike(wx, wy, item.rot || 0);
-                    checkCollision({ x: wx + 15, y: wy + 15, w: CONFIG.GRID - 30, h: CONFIG.GRID - 20, t: 's' }, wy);
+                    checkCollision({ x: wx + 15, y: wy + 15, w: CONFIG.GRID - 30, h: CONFIG.GRID - 20, t: 's' });
                 }
                 else if (item.t === 't') {
                     for (let i = 0; i < 3; i++) {
                         const tx = wx + (i * CONFIG.GRID * 0.7); drawSpike(tx, wy);
-                        checkCollision({ x: tx + 15, y: wy + 15, w: CONFIG.GRID - 30, h: CONFIG.GRID - 20, t: 's' }, wy);
+                        checkCollision({ x: tx + 15, y: wy + 15, w: CONFIG.GRID - 30, h: CONFIG.GRID - 20, t: 's' });
                     }
                 }
                 else if (item.t === 'o') {
                     ctx.fillStyle = 'yellow'; ctx.beginPath(); ctx.arc(wx - state.cameraX + 30, wy + 30, 20, 0, Math.PI * 2); ctx.fill();
-                    checkCollision({ x: wx, y: wy, w: 60, h: 60, t: 'o' }, wy);
+                    checkCollision({ x: wx, y: wy, w: 60, h: 60, t: 'o' });
                 }
                 else if (item.t === 'S' || item.t === 'C') {
                     ctx.fillStyle = item.t === 'S' ? '#0f0' : '#f0f'; ctx.globalAlpha = 0.3; 
                     ctx.fillRect(wx - state.cameraX, 0, 50, state.gameHeight); ctx.globalAlpha = 1;
-                    checkCollision({ x: wx, y: 0, w: 50, h: state.gameHeight, t: item.t }, 0);
+                    checkCollision({ x: wx, y: 0, w: 50, h: state.gameHeight, t: item.t });
                 }
                 else if (item.t === 'finish') {
                     ctx.fillStyle = 'white';
                     for(let i=0; i<6; i++) ctx.fillRect(wx - state.cameraX + (i%2*30), wy + (i*10) - 400, 30, 10);
-                    checkCollision({ x: wx, y: 0, w: 60, h: state.gameHeight, t: 'finish' }, 0);
+                    checkCollision({ x: wx, y: 0, w: 60, h: state.gameHeight, t: 'finish' });
                 }
             });
 
